@@ -13,7 +13,7 @@ const fetchUserProfile = async (token, setCurrentUser, setIsAuthenticated) => {
     setCurrentUser(response.data.user)
     setIsAuthenticated(true)
     localStorage.setItem('user', JSON.stringify(response.data.user))
-  } catch (error) {
+  } catch (error ) {
     setCurrentUser(null)
     setIsAuthenticated(false)
     localStorage.removeItem('user')

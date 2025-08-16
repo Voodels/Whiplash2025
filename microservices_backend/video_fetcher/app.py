@@ -1,34 +1,54 @@
 # In your Video Fetcher service (app.py):
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 import os
 from dotenv import load_dotenv
 from datetime import datetime
 import isodate
 import logging
+from pathlib import Path
 
 # Load environment variables
 load_dotenv()
+
+# Ensure logs directory exists
+Path('logs').mkdir(exist_ok=True)
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('video_fetcher.log'),
+    logging.FileHandler('logs/video_fetcher.log'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})  # Allow all origins for development
 
 # Get YouTube API key from environment
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 if not YOUTUBE_API_KEY:
-    logger.error("YouTube API key not found in environment variables")
-    raise ValueError("Missing YOUTUBE_API_KEY in environment")
+    # Don't crash the service; log a clear warning and let endpoint return 503 when needed.
+    logger.warning("YOUTUBE_API_KEY not found in environment. /fetch_videos will return 503 until it's set.")
+
+def print_banner():
+    banner = (
+        "\n" \
+        "===============================\n"
+        "  Whiplash Video Fetcher v1  \n"
+        "  Port: 5103                  \n"
+        "===============================\n"
+    )
+    try:
+        logger.info(banner)
+    except Exception:
+        # Fallback to stdout if logger isn't configured yet
+        print(banner)
 
 def validate_duration(duration_iso, target_sec, tolerance=0.2):
     """Check if duration is within tolerance of target"""
@@ -56,6 +76,12 @@ def fetch_videos():
     logger.info("Received video fetch request")
     
     try:
+        # Guard against missing API key
+        if not YOUTUBE_API_KEY:
+            msg = "YouTube API key not configured"
+            logger.error(msg)
+            return jsonify({'error': msg}), 503
+
         data = request.get_json()
         if not data:
             logger.error("No JSON data received")
@@ -216,5 +242,6 @@ def sec_to_timestamp(seconds):
     s = seconds % 60
     return f"{h:02d}:{m:02d}:{s:02d}"
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0',port=5003, debug=True)
+if __name__ == "__main__":
+    print_banner()
+    app.run(host="0.0.0.0", port=5103, debug=False)

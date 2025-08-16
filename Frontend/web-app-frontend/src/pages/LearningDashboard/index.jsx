@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import axiosInstance from '../../api/axiosConfig';
 import { Link, useLocation } from 'react-router-dom';
 import { Camera, StickyNote, Timer, Highlighter, Download, PictureInPicture2, AlertCircle, Bookmark, Share2, FileText, Captions, Repeat, Maximize, Settings2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
+import CourseProgressMeter from '../../components/CourseProgressMeter';
 
-const API_BASE = import.meta.env.VITE_REACT_APP_API_BASE || 'http://localhost:5000/api';
+// Using axiosInstance baseURL
 
 const LearningDashboard = ({ courseId }) => {
   const location = useLocation();
@@ -26,13 +27,11 @@ const LearningDashboard = ({ courseId }) => {
     const fetchModules = async () => {
       setLoading(true);
       try {
-        const token = localStorage.getItem('token');
-        const response = await axios.get(`${API_BASE}/student/courses/${courseId}/modules`, {
-          headers: { 'x-auth-token': token }
-        });
+  const response = await axiosInstance.get(`/student/courses/${courseId}/modules`);
         setModules(response.data.modules);
         setLoading(false);
       } catch (err) {
+        console.error(err);
         setError('Failed to load modules');
         setLoading(false);
       }
@@ -103,7 +102,8 @@ const LearningDashboard = ({ courseId }) => {
                 title: v.title,
                 description: v.description,
                 duration: v.duration,
-                topic: module.title
+                topic: module.title,
+                moduleId: module.moduleId
               })));
               setCurrentVideoIdx(i);
               setTopicInfo({
@@ -124,7 +124,8 @@ const LearningDashboard = ({ courseId }) => {
           title: "Selected Video",
           description: "Video selected from syllabus",
           duration: "Unknown",
-          topic: "From Syllabus"
+          topic: "From Syllabus",
+          moduleId: null // No specific module for externally selected videos
         }]);
         setCurrentVideoIdx(0);
         setTopicInfo({
@@ -148,10 +149,26 @@ const LearningDashboard = ({ courseId }) => {
     setCurrentVideoIdx(idx);
   };
 
-  const handleVideoComplete = (videoId, points) => {
+  const handleVideoComplete = async (videoId, points, moduleId) => {
     if (!completedVideos.includes(videoId)) {
+      // Update local state
       setCompletedVideos([...completedVideos, videoId]);
       setTotalScore(totalScore + points);
+
+      // Update backend progress
+      try {
+  await axiosInstance.post(`/student/courses/${courseId}/modules/${moduleId}/complete`, { type: 'video' });
+        console.log('Video completion tracked successfully');
+        
+        // Force refresh of progress data
+        window.dispatchEvent(new CustomEvent('courseProgressUpdate'));
+      } catch (error) {
+        console.error('Error tracking video completion:', error);
+      }
+
+      // Update localStorage
+      localStorage.setItem('completedVideos', JSON.stringify([...completedVideos, videoId]));
+      localStorage.setItem('totalScore', (totalScore + points).toString());
     }
   };
 
@@ -175,6 +192,44 @@ const LearningDashboard = ({ courseId }) => {
     } else if (type === 'assignment') {
       handleAssignmentComplete(id, points);
     }
+  };
+
+  // Calculate progress for a specific topic/module
+  const calculateTopicProgress = (moduleId) => {
+    if (!moduleId) return 0;
+    
+    const module = modules.find(m => m.moduleId === moduleId);
+    if (!module) return 0;
+    
+    const totalItems = (module.videos ? module.videos.length : 0) + 
+                      (module.quiz ? 1 : 0) + 
+                      (module.assignment ? 1 : 0);
+    
+    if (totalItems === 0) return 0;
+    
+    let completedItems = 0;
+    
+    // Count completed videos in this module
+    if (module.videos) {
+      module.videos.forEach(video => {
+        if (completedVideos.includes(video.id)) completedItems++;
+      });
+    }
+    
+    // Check quiz and assignment completion
+    if (module.quiz && completedQuizzes.includes(module.quiz.id)) completedItems++;
+    if (module.assignment && completedAssignments.includes(module.assignment.id)) completedItems++;
+    
+    return Math.round((completedItems / totalItems) * 100);
+  };
+  
+  // Get an encouraging message based on progress
+  const getEncouragementMessage = (progress) => {
+    if (progress >= 90) return 'Almost there! 🎯';
+    if (progress >= 70) return 'Great progress! 🚀';
+    if (progress >= 50) return 'Halfway there! 👍';
+    if (progress > 0) return 'Keep it up! 💪';
+    return 'Get started! 👋';
   };
 
   const calculateModuleProgress = (moduleId) => {
@@ -208,9 +263,44 @@ const LearningDashboard = ({ courseId }) => {
 
   return (
     <div>
+      <div className="space-y-6">
+        {/* Course Progress Meter */}
+        <div>
+          <h2 className="text-xl font-bold mb-4 text-gray-800">Your Learning Progress</h2>
+          <CourseProgressMeter courseId={courseId} className="mb-6" />
+        </div>
+        
+        {/* Current Topic Progress */}
+        {topicInfo && (
+          <div className="bg-white rounded-xl p-6 shadow-md border border-gray-100">
+            <h3 className="text-lg font-semibold mb-3 text-gray-800">Current Topic: {topicInfo.topic}</h3>
+            <div className="space-y-3">
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>Completion</span>
+                <span>{calculateTopicProgress(playlist[currentVideoIdx]?.moduleId)}%</span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-2.5">
+                <div 
+                  className="bg-blue-500 h-2.5 rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${calculateTopicProgress(playlist[currentVideoIdx]?.moduleId)}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>Keep going!</span>
+                <span>{getEncouragementMessage(calculateTopicProgress(playlist[currentVideoIdx]?.moduleId))}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      
       {videoIdFromState && playlist.length > 0 && (
         <div ref={videoPlayerRef} className="mb-6">
-          <EnhancedVideoPlayer videoId={playlist[currentVideoIdx].videoId} />
+          <EnhancedVideoPlayer 
+            videoId={playlist[currentVideoIdx].videoId} 
+            moduleId={playlist[currentVideoIdx].moduleId}
+            onComplete={handleVideoComplete}
+          />
           <h3 className="font-bold text-lg mt-3">{playlist[currentVideoIdx].title}</h3>
           <p className="text-gray-600 text-sm mb-2">{playlist[currentVideoIdx].description}</p>
           {topicInfo && (
@@ -288,6 +378,7 @@ const LearningDashboard = ({ courseId }) => {
                 <VideoPlayer 
                   key={video.id} 
                   video={video} 
+                  moduleId={module.moduleId}
                   onComplete={handleVideoComplete}
                 />
               ))
@@ -361,12 +452,39 @@ const LearningDashboard = ({ courseId }) => {
   );
 };
 
-function EnhancedVideoPlayer({ videoId }) {
+function EnhancedVideoPlayer({ videoId, moduleId, onComplete }) {
   const iframeRef = useRef(null);
   const [showNotes, setShowNotes] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [screenshots, setScreenshots] = useState([]);
   const [showOptions, setShowOptions] = useState(false);
+  const [isVideoCompleted, setIsVideoCompleted] = useState(false);
+
+  useEffect(() => {
+    // Check if video was already completed
+    const completed = localStorage.getItem(`video-completed-${videoId}`);
+    if (completed === 'true') {
+      setIsVideoCompleted(true);
+    }
+  }, [videoId]);
+
+  useEffect(() => {
+    // Simple completion tracker based on time spent on page
+    // In a real implementation, you'd use YouTube API or video events
+    if (!isVideoCompleted && onComplete && moduleId) {
+      const completionTimer = setTimeout(() => {
+        const watched = localStorage.getItem(`video-watched-${videoId}`);
+        if (!watched) {
+          setIsVideoCompleted(true);
+          localStorage.setItem(`video-completed-${videoId}`, 'true');
+          localStorage.setItem(`video-watched-${videoId}`, 'true');
+          onComplete(videoId, 5, moduleId); // 5 points for video completion
+        }
+      }, 30000); // Consider completed after 30 seconds (demo purposes)
+
+      return () => clearTimeout(completionTimer);
+    }
+  }, [videoId, moduleId, onComplete, isVideoCompleted]);
 
   // Screenshot: grabs the video frame as an image (uses html2canvas for demo)
   const handleScreenshot = async () => {
@@ -408,6 +526,13 @@ function EnhancedVideoPlayer({ videoId }) {
 
   return (
     <div className="relative flex flex-col items-center justify-center w-full max-w-2xl mx-auto bg-gradient-to-br from-gray-900 via-gray-800 to-gray-700 rounded-3xl shadow-2xl border-2 border-gray-700 p-4 transition-all duration-200">
+      {/* Video Completion Badge */}
+      {isVideoCompleted && (
+        <div className="absolute top-4 right-4 z-20 bg-green-500 text-white px-3 py-1 rounded-full text-sm font-semibold shadow-lg">
+          ✓ Completed
+        </div>
+      )}
+      
       <div className="relative w-full aspect-video overflow-hidden rounded-2xl shadow-lg border border-gray-600">
         <iframe
           ref={iframeRef}
@@ -483,12 +608,13 @@ function EnhancedVideoPlayer({ videoId }) {
   );
 }
 
-function VideoPlayer({ video, onComplete }) {
+function VideoPlayer({ video, moduleId, onComplete }) {
   const [progress, setProgress] = useState(0);
   const [completed, setCompleted] = useState(false);
   const playerRef = useRef(null);
   const intervalRef = useRef(null);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     // Load YouTube IFrame API
     const tag = document.createElement('script');
@@ -525,9 +651,11 @@ function VideoPlayer({ video, onComplete }) {
         playerRef.current.destroy();
       }
     };
+  // onPlayerStateChange is defined below and stable for our usage; safe to ignore exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [video.id, video.youtubeId]);
 
-  const onPlayerStateChange = (event) => {
+  const onPlayerStateChange = useCallback((event) => {
     // YT.PlayerState.PLAYING = 1
     if (event.data === 1) {
       // Track progress while playing
@@ -544,7 +672,7 @@ function VideoPlayer({ video, onComplete }) {
           if (calculatedProgress >= 90 && !completed) {
             setCompleted(true);
             localStorage.setItem(`video-completed-${video.id}`, 'true');
-            onComplete(video.id, video.points);
+            onComplete(video.id, video.points, moduleId);
             clearInterval(intervalRef.current);
           }
         }
@@ -553,7 +681,7 @@ function VideoPlayer({ video, onComplete }) {
       // Not playing (paused, ended, etc.)
       if (intervalRef.current) clearInterval(intervalRef.current);
     }
-  };
+  }, [completed, moduleId, onComplete, video.id, video.points]);
 
   return (
     <div className="mb-4 border rounded-lg p-3 bg-white shadow-sm">
@@ -615,7 +743,7 @@ const DoubtsModal = () => {
     }
   };
 
-  const handleMouseMove = (e) => {
+  const handleMouseMove = useCallback((e) => {
     if (isDragging) {
       const newPosition = {
         x: e.clientX - dragOffset.x,
@@ -623,14 +751,14 @@ const DoubtsModal = () => {
       };
       setPosition(newPosition);
     }
-  };
+  }, [dragOffset.x, dragOffset.y, isDragging]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     if (isDragging) {
       setIsDragging(false);
       localStorage.setItem('notesModalPosition', JSON.stringify(position));
     }
-  };
+  }, [isDragging, position]);
 
   useEffect(() => {
     if (isDragging) {
@@ -645,7 +773,7 @@ const DoubtsModal = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging]);
+  }, [isDragging, handleMouseMove, handleMouseUp]);
 
   return (
     <>

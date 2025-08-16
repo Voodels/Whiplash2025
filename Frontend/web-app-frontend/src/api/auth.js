@@ -1,37 +1,75 @@
 // src/api/auth.js
 
-import axios from 'axios'
+import axiosInstance from './axiosConfig';
+const API_BASE = '/auth';
 
-// Use correct backend endpoints
-const API_BASE = 'http://localhost:5000/api/auth' // fixed: /api/auth (matches backend)
+// Helper to get token
+const getToken = () => localStorage.getItem('token');
+
+// Helper to handle errors
+const handleError = (error, fallback) => {
+  throw error?.response?.data?.message || error.message || fallback;
+};
+
+// Helper to set user/token
+const setAuthData = (data) => {
+  if (data.token) {
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+  }
+};
 
 export const signIn = async (credentials) => {
   try {
-    console.log('signIn called with:', credentials)
-    const response = await axios.post(`${API_BASE}/login`, credentials)
-    if (response.data.token) {
-      localStorage.setItem('token', response.data.token)
-      localStorage.setItem('user', JSON.stringify(response.data.user))
-    }
-    return response.data
+  const res = await axiosInstance.post(`${API_BASE}/login`, credentials);
+    setAuthData(res.data);
+    return res.data;
   } catch (error) {
-    console.log('Error in signIn:', error)
-    // Surface backend error message if available
-    throw error.response?.data?.message || error.message || 'Failed to sign in'
+    handleError(error, 'Failed to sign in');
   }
-}
+};
 
 export const signUp = async (userInfo) => {
   try {
-    console.log('signUp called with:', userInfo)
-    const response = await axios.post(`${API_BASE}/register`, userInfo)
-    if (response.data.token) {
-      localStorage.setItem('token', response.data.token)
-      localStorage.setItem('user', JSON.stringify(response.data.user))
-    }
-    return response.data
+    if (!userInfo.aiConfig?.apiKey) throw new Error('API key is required to use this platform');
+  // Use '/signup' alias to avoid client-side blockers that target '/register'
+  const res = await axiosInstance.post(`${API_BASE}/signup`, userInfo);
+    setAuthData(res.data);
+    return res.data;
   } catch (error) {
-    // Surface backend error message if available
-    throw error.response?.data?.message || error.message || 'Failed to sign up'
+    handleError(error, 'Failed to sign up');
   }
-}
+};
+
+export const validateApiKey = async () => {
+  try {
+  const token = getToken();
+  if (!token) throw new Error('No authentication token found');
+  const res = await axiosInstance.post(`${API_BASE}/validate-api-key`, {});
+    return res.data;
+  } catch (error) {
+    handleError(error, 'Failed to validate API key');
+  }
+};
+
+export const updateApiConfig = async (apiConfig) => {
+  try {
+  const token = getToken();
+  if (!token) throw new Error('No authentication token found');
+  const res = await axiosInstance.put(`${API_BASE}/api-config`, apiConfig);
+    return res.data;
+  } catch (error) {
+    handleError(error, 'Failed to update API configuration');
+  }
+};
+
+export const getApiConfig = async () => {
+  try {
+  const token = getToken();
+  if (!token) throw new Error('No authentication token found');
+  const res = await axiosInstance.get(`${API_BASE}/me`);
+    return res.data.user?.aiConfig || null;
+  } catch (error) {
+    handleError(error, 'Failed to get API configuration');
+  }
+};

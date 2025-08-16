@@ -7,9 +7,11 @@ import {
   useNodesState,
   useEdgesState,
   addEdge,
+  Handle,
+  Position,
 } from '@xyflow/react';
 import dagre from 'dagre';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import '@xyflow/react/dist/style.css';
 import { useNavigate, useParams } from 'react-router-dom';
 import useCourseStore from '../../store/courseStore';
@@ -25,12 +27,28 @@ const TopicNode = ({ data, selected }) => {
       className={`flex flex-col items-center justify-center rounded-xl border-2 shadow-md px-3 py-2 min-w-[120px] max-w-[200px] ${bgColor}`}
       style={{ transition: 'box-shadow 0.2s, border 0.2s' }}
     >
+      {/* Input handle (top) */}
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="top"
+        style={{ background: '#555' }}
+      />
+      
       <div className="font-bold text-base md:text-lg text-gray-900 mb-1 text-center">
         {data.label}
       </div>
       {data.description && (
         <div className="text-xs text-gray-600 text-center mb-1">{data.description}</div>
       )}
+      
+      {/* Output handle (bottom) */}
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="bottom"
+        style={{ background: '#555' }}
+      />
     </div>
   );
 };
@@ -61,8 +79,8 @@ const layoutNodes = (nodes, edges, direction = 'TB') => {
       return {
         ...node,
         position: { x: 0, y: 80 * nodes.findIndex(n => n.id === node.id) },
-        sourcePosition: direction === 'LR' ? 'right' : 'bottom',
-        targetPosition: direction === 'LR' ? 'left' : 'top',
+        sourcePosition: Position.Bottom,
+        targetPosition: Position.Top,
         style: {
           width: `${width}px`,
           height: `${height}px`,
@@ -75,8 +93,8 @@ const layoutNodes = (nodes, edges, direction = 'TB') => {
         x: nodeWithPosition.x - width / 2,
         y: nodeWithPosition.y - height / 2,
       },
-      sourcePosition: direction === 'LR' ? 'right' : 'bottom',
-      targetPosition: direction === 'LR' ? 'left' : 'top',
+      sourcePosition: Position.Bottom,
+      targetPosition: Position.Top,
       style: {
         width: `${width}px`,
         height: `${height}px`,
@@ -114,7 +132,16 @@ const SyllabusPage = () => {
       return;
     }
     // Find course by courseId param or fallback to first
-    let course = courses.find(c => c.courseId === courseId) || courses[0];
+    // Try multiple ways to match course ID
+    let course = courses.find(c => 
+      c.courseId === courseId || 
+      c._id === courseId || 
+      c.id === courseId
+    ) || courses[0];
+    
+    console.log('Looking for courseId:', courseId);
+    console.log('Available courses:', courses.map(c => ({ id: c._id, courseId: c.courseId, title: c.title })));
+    console.log('Selected course:', course);
     if (!course) {
       setError('Course not found.');
       setNodes([]);
@@ -127,29 +154,45 @@ const SyllabusPage = () => {
     let nodesArr = (course.syllabus && Array.isArray(course.syllabus.nodes) && course.syllabus.nodes.length)
       ? course.syllabus.nodes
       : (Array.isArray(course.topics) ? course.topics.map((topic, idx) => ({
-          id: topic.topicId || `t${idx+1}`,
+          id: topic.topicId || topic._id || `topic-${idx}`,
           data: { label: topic.name, description: topic.description },
           type: 'topic',
         })) : []);
-    // Ensure node IDs are strings
-    nodesArr = nodesArr.map(node => ({ ...node, id: String(node.id) }));
+        
+    // Ensure node IDs are strings and not null/undefined
+    nodesArr = nodesArr.map((node, idx) => ({ 
+      ...node, 
+      id: String(node.id || `node-${idx}`)
+    })).filter(node => node.id && node.id !== 'null' && node.id !== 'undefined');
+    
+    console.log('Processed nodes:', nodesArr);
     // Always connect nodes linearly if syllabus.edges is missing or empty
     let edgesArr = [];
     if (course.syllabus && Array.isArray(course.syllabus.edges) && course.syllabus.edges.length) {
       edgesArr = course.syllabus.edges;
     } else if (nodesArr.length > 1) {
       for (let i = 0; i < nodesArr.length - 1; i++) {
-        edgesArr.push({
-          id: `e_${nodesArr[i].id}_${nodesArr[i+1].id}`,
-          source: nodesArr[i].id,
-          target: nodesArr[i+1].id,
-          type: 'smoothstep',
-          style: { stroke: '#111', strokeWidth: 3 },
-          markerEnd: { type: 'arrowclosed', color: '#111' },
-          data: { label: '' },
-        });
+        const sourceId = String(nodesArr[i].id);
+        const targetId = String(nodesArr[i+1].id);
+        
+        // Only create edge if both IDs are valid
+        if (sourceId && targetId && sourceId !== 'null' && targetId !== 'null') {
+          edgesArr.push({
+            id: `e_${sourceId}_${targetId}`,
+            source: sourceId,
+            target: targetId,
+            sourceHandle: 'bottom',
+            targetHandle: 'top',
+            type: 'smoothstep',
+            style: { stroke: '#111', strokeWidth: 3 },
+            markerEnd: { type: 'arrowclosed', color: '#111' },
+            data: { label: '' },
+          });
+        }
       }
     }
+    
+    console.log('Created edges:', edgesArr);
     // DEBUG: Log nodes and edges to verify connections
     console.log('NODES:', nodesArr);
     console.log('EDGES:', edgesArr);
@@ -171,20 +214,36 @@ const SyllabusPage = () => {
 
   const onConnect = useCallback((params) => {
     // Remove handle fields if they are null to avoid React Flow error
-    const { sourceHandle, targetHandle, ...rest } = params;
+    const { sourceHandle: _sourceHandle, targetHandle: _targetHandle, ...rest } = params;
     setEdges((eds) => addEdge(rest, eds));
   }, [setEdges]);
 
-  const handlePlayVideo = (videoId) => {
+  const handlePlayVideo = useCallback((videoId) => {
     setSelectedTopic(null); // Close modal if desired
     navigate('/dashboard/learning', { state: { videoId } });
-  };
+  }, [navigate, courses, courseId, findTopicByLabel]);
 
-  // Show topic resources in modal, including mapped YouTube links with thumbnails
+  // Redirect to LearningDashboard with the selected topic
   const onNodeClick = useCallback((event, node) => {
-    setSelectedTopic(node.data.label);
-    let course = courses.find(c => c.courseId === courseId) || courses[0];
+    const course = courses.find(c => c.courseId === courseId) || courses[0];
     const topic = findTopicByLabel(node.data.label, course);
+    
+    if (topic) {
+      // Navigate to LearningDashboard with course and topic info
+      navigate('/dashboard/learning', { 
+        state: { 
+          courseId: course.courseId || course._id,
+          courseTitle: course.title,
+          topicId: topic.id || topic._id,
+          topicName: topic.name,
+          resources: topic.resources || []
+        }
+      });
+      return;
+    }
+    
+    // Fallback to showing resources in modal if topic not found
+    setSelectedTopic(node.data.label);
     let resources = [];
     if (topic && Array.isArray(topic.resources)) {
       resources = topic.resources.map((res) => {
@@ -251,7 +310,7 @@ const SyllabusPage = () => {
       resources = [<span className="text-gray-400">No resources found for {node.data.label}</span>];
     }
     setModalResources(resources);
-  }, [courses, courseId, findTopicByLabel]);
+  }, [courses, courseId, findTopicByLabel, handlePlayVideo]);
 
   const onPaneClick = useCallback(() => {
     setSelectedTopic(null);
@@ -263,9 +322,29 @@ const SyllabusPage = () => {
     <div ref={reactFlowWrapper} className="w-full h-screen bg-gradient-to-br from-gray-50 via-stone-50 to-slate-100 p-4 flex flex-col">
       {/* Header Section */}
       <div className="mb-4 flex items-center gap-3 flex-wrap border-b pb-3 border-gray-200">
-        <h2 className="text-lg md:text-xl font-semibold text-gray-800 ml-auto pl-4 whitespace-nowrap">
+        <h2 className="text-lg md:text-xl font-semibold text-gray-800 pl-4 whitespace-nowrap">
           {courseTitle} Learning Path
         </h2>
+        {/* Course Selector */}
+        <div className="ml-auto">
+          <select
+            value={courseId || ''}
+            onChange={(e) => {
+              const newCourseId = e.target.value;
+              if (newCourseId && newCourseId !== courseId) {
+                navigate(`/dashboard/syllabus/${newCourseId}`);
+              }
+            }}
+            className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+          >
+            <option value="">Select Course</option>
+            {courses && courses.map((course) => (
+              <option key={course._id} value={course._id}>
+                {course.title}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       {/* React Flow Section */}
       <div className="flex-grow relative rounded-lg overflow-hidden border border-gray-200 shadow-inner bg-white">
@@ -283,6 +362,8 @@ const SyllabusPage = () => {
             type: 'smoothstep',
             style: { stroke: '#111', strokeWidth: 3 },
             markerEnd: { type: 'arrowclosed', color: '#111' },
+            sourceHandle: 'bottom',
+            targetHandle: 'top',
           }}
         >
           <MiniMap nodeStrokeWidth={3} nodeColor="#a0a0a0" maskColor="#f0f0f0" />

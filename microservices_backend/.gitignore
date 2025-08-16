@@ -1,0 +1,16 @@
+# Python venv
+.venv/
+
+# Bytecode
+__pycache__/
+*.pyc
+
+# Logs
+logs/
+*.log
+
+# Local env
+.env
+
+# Build metadata
+whiplash_services.egg-info/

@@ -19,11 +19,17 @@ RUN npm run build
 # Use a lightweight web server to serve the built files
 FROM nginx:alpine
 
+# Install curl for health checks
+RUN apk add --no-cache curl
+
+# Copy custom nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
 # Copy the built files to the nginx html directory
 COPY --from=build /app/dist /usr/share/nginx/html
 
 # Expose port 80
-EXPOSE 5175
+EXPOSE 80
 
 # Start nginx
 CMD ["nginx", "-g", "daemon off;"]

@@ -7,6 +7,9 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 
 import useCourseStore from '../../store/courseStore';
 import { generateLearningPath } from '../../api/mcp';
+import { eventAPI, formatEventForDisplay } from '../../api/events';
+import EventModal from '../../components/EventModal';
+import CourseProgressMeter from '../../components/CourseProgressMeter';
 
 const StudentDashboard = () => {
   const [open, setOpen] = useState(false);
@@ -18,6 +21,11 @@ const StudentDashboard = () => {
   const [navOpen, setNavOpen] = useState(true);
   const [calendarOpen, setCalendarOpen] = useState(true);
   const [upcomingOpen, setUpcomingOpen] = useState(true);
+  
+  // Event management state
+  const [upcomingEvents, setUpcomingEvents] = useState([]);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [eventsLoading, setEventsLoading] = useState(true);
   const [uploadMode, setUploadMode] = useState('upload');
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrError, setOcrError] = useState(null);
@@ -33,11 +41,48 @@ const StudentDashboard = () => {
   const [lpError, setLpError] = useState(null);
 
   const navigate = useNavigate();
-  const { courses, fetchCourses, fetchCourseDetails, setCurrentCourse, setCurrentTopic, currentCourse } = useCourseStore();
+  const { courses, fetchCourses, fetchCourseDetails, setCurrentCourse, setCurrentTopic, currentCourse, enrollInAllCourses } = useCourseStore();
 
   useEffect(() => {
-    fetchCourses();
+    const initializeDashboard = async () => {
+      await fetchCourses();
+    };
+    
+    initializeDashboard();
+    fetchUpcomingEvents();
   }, [fetchCourses]);
+
+  // Auto-enroll if no courses found
+  useEffect(() => {
+    const autoEnroll = async () => {
+      if (courses && courses.length === 0) {
+        console.log('No courses found, attempting auto-enrollment...');
+        try {
+          await enrollInAllCourses();
+          console.log('Auto-enrollment successful!');
+        } catch (error) {
+          console.error('Auto-enrollment failed:', error);
+        }
+      }
+    };
+    
+    autoEnroll();
+  }, [courses, enrollInAllCourses]);
+
+  // Fetch upcoming events
+  const fetchUpcomingEvents = async () => {
+    try {
+      setEventsLoading(true);
+      const response = await eventAPI.getUpcomingEvents(5);
+      if (response.success) {
+        setUpcomingEvents(response.events.map(formatEventForDisplay));
+      }
+    } catch (error) {
+      console.error('Error fetching upcoming events:', error);
+    } finally {
+      setEventsLoading(false);
+    }
+  };
 
   useEffect(() => {
     const handleResize = () => {
@@ -57,7 +102,7 @@ const StudentDashboard = () => {
     if (window.innerWidth < 768) setSidebarOpen(false);
   };
 
-  const handleImageUpload = (e) => {
+  const handleImageUpload = () => {
     setOcrLoading(true);
     setOcrError(null);
     setOcrTopics([]);
@@ -67,53 +112,60 @@ const StudentDashboard = () => {
     }, 2000);
   };
 
+  const handleEventCreated = (newEvent) => {
+    const formattedEvent = formatEventForDisplay(newEvent);
+    setUpcomingEvents(prev => [formattedEvent, ...prev].slice(0, 5));
+    setShowEventModal(false);
+  };
+
   const handleSaveSyllabus = async () => {
-  console.log('[handleSaveSyllabus] called');
-  setLpLoading(true);
-  setLpError(null);
-  
-  try {
-    // Validate inputs
-    if (!manualTopics || !targetDays || !dailyHours || !startDate) {
-      throw new Error('Please fill in all the fields');
-    }
+    console.log('[handleSaveSyllabus] called');
+    setLpLoading(true);
+    setLpError(null);
+    
+    try {
+      // Validate inputs
+      if (!manualTopics || !targetDays || !dailyHours || !startDate) {
+        throw new Error('Please fill in all the fields');
+      }
 
-    // Prepare payload
-    const payload = {
-      manualTopics: manualTopics.split(',').map(t => t.trim()),
-      targetDays: Number(targetDays),
-      dailyHours: Number(dailyHours),
-      startDate: startDate
-    };
+      // Prepare payload
+      const payload = {
+        manualTopics: manualTopics.split(',').map(t => t.trim()),
+        targetDays: Number(targetDays),
+        dailyHours: Number(dailyHours),
+        startDate: startDate
+      };
 
-    console.log('[handleSaveSyllabus] Sending data:', payload);
-    const data = await generateLearningPath(payload);
-    
-    console.log('[handleSaveSyllabus] Received response:', data);
-    setLearningPath(data);
-    handleClose();
-  } catch (err) {
-    console.error('[handleSaveSyllabus] Error:', err);
-    
-    // User-friendly error messages
-    let displayError = err.message;
-    if (err.message.includes('Network Error')) {
-      displayError = 'Unable to connect to the server. Please check your connection.';
-    } else if (err.message.includes('timeout')) {
-      displayError = 'Request timed out. Please try again.';
-    } else if (err.message.includes('500')) {
-      displayError = 'Server error. Please try again later.';
+      console.log('[handleSaveSyllabus] Sending data:', payload);
+      const data = await generateLearningPath(payload);
+      
+      console.log('[handleSaveSyllabus] Received response:', data);
+      setLearningPath(data);
+      handleClose();
+    } catch (err) {
+      console.error('[handleSaveSyllabus] Error:', err);
+      
+      // User-friendly error messages
+      let displayError = err.message;
+      if (err.message.includes('Network Error')) {
+        displayError = 'Unable to connect to the server. Please check your connection.';
+      } else if (err.message.includes('timeout')) {
+        displayError = 'Request timed out. Please try again.';
+      } else if (err.message.includes('500')) {
+        displayError = 'Server error. Please try again later.';
+      }
+      
+      setLpError(displayError);
+    } finally {
+      setLpLoading(false);
     }
-    
-    setLpError(displayError);
-  } finally {
-    setLpLoading(false);
-  }
-};
+  };
 
   const tileClassName = ({ date, view }) => {
     if (view === 'month') {
-      const isEvent = importantEvents.some(ev =>
+      const calendarEvents = getCalendarEvents();
+      const isEvent = calendarEvents.some(ev =>
         ev.date.toDateString() === date.toDateString()
       );
       if (isEvent) return 'highlight';
@@ -140,16 +192,18 @@ const StudentDashboard = () => {
     setUpcomingOpen(false);
   };
 
-  const importantEvents = [
-    { date: new Date(2025, 3, 15), label: 'AI/ML Mid Exam' },
-    { date: new Date(2025, 3, 18), label: 'Web Dev Project Review' },
-    { date: new Date(2025, 3, 20), label: 'Hackathon' },
-    { date: new Date(), label: 'Today: Prep for DBMS' }
-  ];
+  // Function to get formatted events for calendar highlighting
+  const getCalendarEvents = () => {
+    return upcomingEvents.map(event => ({
+      date: new Date(event.startDate),
+      label: event.title
+    }));
+  };
 
   const handleGoToSyllabus = async (courseId) => {
     await fetchCourseDetails(courseId);
-    navigate('/syllabus');
+    console.log('Navigating to syllabus for course:', courseId);
+    navigate(`/dashboard/syllabus/${courseId}`);
   };
 
   return (
@@ -201,14 +255,51 @@ const StudentDashboard = () => {
               {upcomingOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
             </div>
             {upcomingOpen && (
-              <ul className="space-y-2">
-                {importantEvents.map((event, idx) => (
-                  <li key={idx} className="p-2 rounded-xl bg-gray-50 text-sm hover:bg-gray-100 transition-all">
-                    <div className="font-medium">{event.label}</div>
-                    <div className="text-xs text-gray-500">{event.date.toDateString()}</div>
-                  </li>
-                ))}
-              </ul>
+              <div>
+                {eventsLoading ? (
+                  <div className="p-4 text-center text-gray-500">Loading events...</div>
+                ) : upcomingEvents.length === 0 ? (
+                  <div className="p-4 text-center text-gray-500">
+                    <p className="mb-2">No upcoming events</p>
+                    <button
+                      onClick={() => setShowEventModal(true)}
+                      className="text-blue-600 hover:text-blue-800 text-sm"
+                    >
+                      Create your first event
+                    </button>
+                  </div>
+                ) : (
+                  <ul className="space-y-2">
+                    {upcomingEvents.map((event, idx) => (
+                      <li key={event._id || idx} className="p-2 rounded-xl bg-gray-50 text-sm hover:bg-gray-100 transition-all">
+                        <div className="font-medium">{event.title}</div>
+                        <div className="text-xs text-gray-500">
+                          {event.formattedStartDate}
+                          {!event.isAllDay && ` at ${event.formattedStartTime}`}
+                        </div>
+                        {event.priority && (
+                          <div className={`text-xs px-2 py-1 rounded mt-1 inline-block ${
+                            event.priority === 'urgent' ? 'bg-red-100 text-red-800' :
+                            event.priority === 'high' ? 'bg-orange-100 text-orange-800' :
+                            event.priority === 'medium' ? 'bg-blue-100 text-blue-800' :
+                            'bg-green-100 text-green-800'
+                          }`}>
+                            {event.priority}
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div className="mt-3 pt-3 border-t">
+                  <button
+                    onClick={() => setShowEventModal(true)}
+                    className="w-full px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    + Add Event
+                  </button>
+                </div>
+              </div>
             )}
           </div>
           
@@ -238,6 +329,9 @@ const StudentDashboard = () => {
                 </NavLink>
                 <NavLink to="/dashboard/syllabus" className={navLinkStyle} onClick={closeSidebarIfMobile}>
                   📑 Syllabus
+                </NavLink>
+                <NavLink to="/dashboard/events" className={navLinkStyle} onClick={closeSidebarIfMobile}>
+                  📅 Events
                 </NavLink>
               </nav>
             )}
@@ -279,7 +373,24 @@ const StudentDashboard = () => {
                   </li>
                 ))
               ) : (
-                <li className="text-gray-400">No courses found.</li>
+                <li className="text-gray-400 p-4">
+                  <div className="text-center">
+                    <p className="mb-2">No courses found.</p>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await enrollInAllCourses();
+                          console.log('Manual enrollment successful!');
+                        } catch (error) {
+                          console.error('Manual enrollment failed:', error);
+                        }
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                    >
+                      Enroll in Available Courses
+                    </button>
+                  </div>
+                </li>
               )}
             </ul>
             {courses && courses.map(course => (
@@ -334,7 +445,15 @@ const StudentDashboard = () => {
           </div>
 
           {/* Content area */}
-          <div className="mt-4 bg-white rounded-2xl shadow-md p-6">
+          <div className="mt-4 space-y-6">
+            {/* Course Progress Meter */}
+            {currentCourse && (
+              <CourseProgressMeter 
+                courseId={currentCourse.courseId} 
+                className="mb-6" 
+              />
+            )}
+
             {/* Learning Path Generation Status */}
             {lpLoading && (
               <div className="text-blue-600 font-semibold mb-4">Generating your personalized learning path...</div>
@@ -342,65 +461,68 @@ const StudentDashboard = () => {
             {lpError && (
               <div className="text-red-600 font-semibold mb-4">Error: {lpError}</div>
             )}
-            {/* Display Generated Learning Path */}
-            {learningPath && (
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold mb-4">Your Personalized Learning Path</h2>
-                {learningPath.plan && Object.keys(learningPath.plan).length > 0 ? (
-                  <div className="space-y-6">
-                    {Object.entries(learningPath.plan).map(([date, value], idx) => (
-                      <div key={idx} className="border rounded-xl p-4 bg-gray-50">
-                        <h3 className="text-xl font-semibold mb-2">Day {idx + 1}: {date}</h3>
-                        <ul className="mb-2 list-disc list-inside">
-                          <li className="mb-1">
-                            <span className="font-medium">{value.subtopic || ''}</span>
-                          </li>
-                          {value.youtube_link && (
-                            <li>
-                              <a href={value.youtube_link} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">
-                                Watch Video
-                              </a>
-                              {value.timestamp && (
-                                <span className="ml-2 text-xs text-gray-500">[{value.timestamp}]</span>
-                              )}
-                            </li>
-                          )}
-                          {value.notes && (
-                            <li>
-                              <span className="font-semibold">Notes:</span> {value.notes}
-                            </li>
-                          )}
-                          {value.quizzes && value.quizzes.length > 0 && (
-                            <li>
-                              <span className="font-semibold">Quizzes:</span>
-                              <ul className="ml-4 list-decimal">
-                                {value.quizzes.map((quiz, quizIdx) => (
-                                  <li key={quizIdx}>{quiz.questionText}</li>
-                                ))}
-                              </ul>
-                            </li>
-                          )}
-                          {value.assignments && value.assignments.length > 0 && (
-                            <li>
-                              <span className="font-semibold">Assignments:</span>
-                              <ul className="ml-4 list-decimal">
-                                {value.assignments.map((assn, assnIdx) => (
-                                  <li key={assnIdx}>{assn.questionText}</li>
-                                ))}
-                              </ul>
-                            </li>
-                          )}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div>No modules found in the generated learning path.</div>
-                )}
-              </div>
-            )}
 
-            <Outlet />
+            <div className="bg-white rounded-2xl shadow-md p-6">
+              {/* Display Generated Learning Path */}
+              {learningPath && (
+                <div className="mb-6">
+                  <h2 className="text-2xl font-bold mb-4">Your Personalized Learning Path</h2>
+                  {learningPath.plan && Object.keys(learningPath.plan).length > 0 ? (
+                    <div className="space-y-6">
+                      {Object.entries(learningPath.plan).map(([date, value], idx) => (
+                        <div key={idx} className="border rounded-xl p-4 bg-gray-50">
+                          <h3 className="text-xl font-semibold mb-2">Day {idx + 1}: {date}</h3>
+                          <ul className="mb-2 list-disc list-inside">
+                            <li className="mb-1">
+                              <span className="font-medium">{value.subtopic || ''}</span>
+                            </li>
+                            {value.youtube_link && (
+                              <li>
+                                <a href={value.youtube_link} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">
+                                  Watch Video
+                                </a>
+                                {value.timestamp && (
+                                  <span className="ml-2 text-xs text-gray-500">[{value.timestamp}]</span>
+                                )}
+                              </li>
+                            )}
+                            {value.notes && (
+                              <li>
+                                <span className="font-semibold">Notes:</span> {value.notes}
+                              </li>
+                            )}
+                            {value.quizzes && value.quizzes.length > 0 && (
+                              <li>
+                                <span className="font-semibold">Quizzes:</span>
+                                <ul className="ml-4 list-decimal">
+                                  {value.quizzes.map((quiz, quizIdx) => (
+                                    <li key={quizIdx}>{quiz.questionText}</li>
+                                  ))}
+                                </ul>
+                              </li>
+                            )}
+                            {value.assignments && value.assignments.length > 0 && (
+                              <li>
+                                <span className="font-semibold">Assignments:</span>
+                                <ul className="ml-4 list-decimal">
+                                  {value.assignments.map((assn, assnIdx) => (
+                                    <li key={assnIdx}>{assn.questionText}</li>
+                                  ))}
+                                </ul>
+                              </li>
+                            )}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div>No modules found in the generated learning path.</div>
+                  )}
+                </div>
+              )}
+
+              <Outlet />
+            </div>
           </div>
         </div>
       </div>
@@ -457,6 +579,8 @@ const StudentDashboard = () => {
                     if (selectedTopic) {
                       setCurrentTopic(selectedTopic);
                     }
+                    // Navigate to syllabus page with the new course
+                    handleGoToSyllabus(courseModal.selectedCourse._id || courseModal.selectedCourse.courseId);
                   }
                   setCourseModal({ open: false, selectedCourse: null });
                   setSelectedTopic(null);
@@ -586,6 +710,13 @@ const StudentDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Event Modal */}
+      <EventModal
+        isOpen={showEventModal}
+        onClose={() => setShowEventModal(false)}
+        onEventCreated={handleEventCreated}
+      />
     </div>
   );
 };

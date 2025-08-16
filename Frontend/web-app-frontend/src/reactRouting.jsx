@@ -1,17 +1,9 @@
 import React from 'react';
 import { Routes, Route, Link, Navigate } from 'react-router-dom';
-import RegisterPage from './pages/register';
-import ProtectedRoute from './components/ProtectedRoute';
-import StudentDashboard from './pages/studentDashboard';
-import AssignmentsPage from './pages/assignmentsPage';
-import LearningDashboard from './pages/LearningDashboard';
-import NotesPage from './pages/notesPage';
-import QuizesPage from './pages/quizesPage';
-import SyllabusPage from './pages/syllabusPage';
-import DashboardHome from './pages/dashboardHome';
-import DebugPage from './pages/DebugPage';
-import useCourseStore from './store/courseStore';
-import GlobalUserBar from './components/GlobalUserBar';
+import { NewRegisterPage, StudentDashboard, AssignmentsPage, LearningDashboard, NotesPage, QuizesPage, SyllabusPage, DashboardHome, DebugPage, EventsPage } from './pages';
+import { ProtectedRoute, GlobalUserBar } from './components/global';
+// pages imported from pages/index.js barrel
+// GlobalUserBar imported from components/global
 
 // NotFound component for unmatched routes
 const NotFound = () => {
@@ -23,6 +15,7 @@ const NotFound = () => {
     { path: '/dashboard/notes', label: 'Notes' },
     { path: '/dashboard/quizzes', label: 'Quizzes' },
     { path: '/dashboard/syllabus', label: 'Syllabus' },
+    { path: '/dashboard/events', label: 'Events' },
   ];
   return (
     <div className="h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -62,7 +55,7 @@ const AppRoutes = () => {
         {/* Redirect root to login or dashboard */}
         <Route path="/" element={<Navigate to="/register" replace />} />
         {/* Public route: register only */}
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/register" element={<NewRegisterPage />} />
         {/* All other routes are protected */}
         <Route
           path="/dashboard"
@@ -79,6 +72,8 @@ const AppRoutes = () => {
           <Route path="learning" element={<LearningDashboard courseId={getDefaultCourseId()} />} />
           <Route path="notes" element={<NotesPage />} />
           <Route path="syllabus" element={<SyllabusPage />} />
+          <Route path="syllabus/:courseId" element={<SyllabusPage />} />
+          <Route path="events" element={<EventsPage />} />
         </Route>
         {/* Catch-all: protect everything else */}
         <Route

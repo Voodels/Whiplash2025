@@ -70,8 +70,8 @@ except Exception as e:
     learning_paths_collection = None
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:5174"}})
-console.print("[bold green]✓[/bold green] Flask app initialized with CORS")
+CORS(app, resources={r"/*": {"origins": "*"}})  # Allow all origins for development
+console.print("[bold green]✓[/bold green] Flask app initialized with CORS (allowing all origins)")
 
 # Improved Gemini prompt for a full study plan distributed by date
 STUDY_PLAN_PROMPT = (
@@ -146,7 +146,8 @@ def generate_plan():
         
         start = time.time()
         try:
-            plan_str = call_gemini(prompt)
+            # Allow per-request API key override from backend proxy
+            plan_str = call_gemini(prompt, api_key=request.json.get('api_key'))
             elapsed = time.time() - start
             
             # Clean and parse the response
@@ -182,26 +183,26 @@ def generate_plan():
     plan_with_videos = plan.copy()  # Default fallback if video fetcher fails
     
     with console.status("[bold yellow]Connecting to Video Fetcher service...", spinner="dots") as status:
-        video_fetcher_url = 'http://localhost:5003/fetch_videos'
+        video_fetcher_url = 'http://localhost:5103/fetch_videos'
         request_payload = {
             'topic_name': topic_name,
             'plan': plan,
             'daily_hours': daily_hours,
             'target_days': no_of_days
         }
-        
+
         console.print(f"[dim]Video Fetcher URL:[/dim] {video_fetcher_url}")
-        
+
         # First try a health check
         try:
-            health_check = requests.get('http://localhost:5003/health', timeout=5)
+            health_check = requests.get('http://localhost:5103/health', timeout=5)
             if health_check.status_code == 200:
                 console.print("[green]✓ Video Fetcher service is healthy[/green]")
             else:
                 console.print(f"[yellow]⚠ Video Fetcher health check returned status {health_check.status_code}[/yellow]")
         except Exception as health_err:
             console.print(f"[yellow]⚠ Video Fetcher health check failed: {str(health_err)}[/yellow]")
-        
+
         # Now make the actual request
         try:
             start = time.time()
@@ -212,20 +213,20 @@ def generate_plan():
                 headers={'Content-Type': 'application/json'}
             )
             elapsed = time.time() - start
-            
+
             video_resp.raise_for_status()
             video_data = video_resp.json()
-            
+
             console.print(f"[green]✓ Video Fetcher response received[/green] [dim]({elapsed:.2f}s)[/dim]")
-            
+
             # Display video results in a table
             video_table = Table(title="Videos Retrieved")
             video_table.add_column("Date", style="cyan")
             video_table.add_column("Subtopic", style="green")
             video_table.add_column("Video Link", style="blue")
-            
+
             plan_with_videos = video_data.get('plan', plan)
-            
+
             for date, value in plan_with_videos.items():
                 if isinstance(value, dict):
                     subtopic = value.get('subtopic') or value.get('name') or ''
@@ -233,9 +234,9 @@ def generate_plan():
                 else:
                     subtopic = value
                     youtube_link = 'No video found'
-                
+
                 video_table.add_row(date, subtopic, youtube_link)
-            
+
             console.print(video_table)
             
         except requests.exceptions.ConnectionError as e:
@@ -243,7 +244,7 @@ def generate_plan():
                 f"[bold red]Could not connect to Video Fetcher[/bold red]\n"
                 f"[yellow]Error:[/yellow] {str(e)}\n\n"
                 "[white]Recommendations:[/white]\n"
-                "1. Ensure Video Fetcher service is running on port 5003\n"
+                "1. Ensure Video Fetcher service is running on port 5103\n"
                 "2. Check for network/firewall issues\n"
                 "3. Verify the service URL is correct",
                 title="Connection Error",
@@ -320,7 +321,7 @@ def generate_plan():
             
             try:
                 quiz_resp = requests.post(
-                    'http://localhost:5004/generate_quiz_and_assignments',
+                    'http://localhost:5104/generate_quiz_and_assignments',
                     json={
                         'subtopic': subtopic,
                         'timestamp': timestamp,
@@ -405,5 +406,5 @@ def generate_plan():
 
 if __name__ == '__main__':
     print_banner()
-    console.print(f"[bold green]Starting MCP Server on port 5001...[/bold green]")
-    app.run(host='0.0.0.0', port=5001, debug=True)
+    console.print(f"[bold green]Starting MCP Server on port 5101...[/bold green]")
+    app.run(host='0.0.0.0', port=5101, debug=True)

@@ -1,6 +1,6 @@
 // src/pages/quizesPage.jsx
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axiosInstance from '../../api/axiosConfig';
 import { useParams } from 'react-router-dom';
 import useCourseStore from '../../store/courseStore';
 
@@ -29,12 +29,7 @@ const QuizesPage = () => {
     setError(null);
     try {
       // Fetch ALL quizzes for the course
-      const token = localStorage.getItem('token');
-      const API_BASE = 'http://localhost:5000/api';
-      const response = await axios.get(
-        `${API_BASE}/student/courses/${currentCourse.courseId}/quizzes`,
-        { headers: { 'x-auth-token': token } }
-      );
+  const response = await axiosInstance.get(`/student/courses/${currentCourse.courseId}/quizzes`);
       // Filter quizzes for this topic
       const allQuizzes = response.data.quizzes || [];
       const topicQuizzes = allQuizzes.filter(q => q.topicId === topic.topicId);
@@ -84,11 +79,7 @@ const QuizesPage = () => {
               setQuizQuestions((prev) => {
                 if (prev.length > 0) return prev;
                 // fallback: fetch all quizzes for the course
-                const token = localStorage.getItem('token');
-                const API_BASE = 'http://localhost:5000/api';
-                axios.get(`${API_BASE}/student/courses/${currentCourse.courseId}/quizzes`,
-                  { headers: { 'x-auth-token': token } }
-                ).then(response => {
+                axiosInstance.get(`/student/courses/${currentCourse.courseId}/quizzes`).then(response => {
                   let allQuestions = [];
                   (response.data.quizzes || []).forEach(quiz => {
                     if (Array.isArray(quiz.questions)) {

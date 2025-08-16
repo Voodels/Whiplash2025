@@ -1,1 +1,138 @@
 @import "tailwindcss";
+@import "./styles/responsive-utilities.css";
+
+/* Global app styles for responsive design */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  background-color: #f8fafc;
+}
+
+.app-container {
+  min-height: 100vh;
+  min-height: calc(var(--vh, 1vh) * 100);
+  width: 100%;
+  position: relative;
+}
+
+/* Prevent zoom on input focus for iOS */
+@media screen and (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important;
+    transform: translateZ(0);
+  }
+}
+
+/* Enhanced scrollbar for webkit browsers */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@media (max-width: 768px) {
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+}
+
+/* Custom selection styling */
+::selection {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+::-moz-selection {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+/* Focus states for accessibility */
+:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Global animation classes */
+.animate-fade-in {
+  animation: fadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  body {
+    background-color: #ffffff;
+    color: #000000;
+  }
+}
+
+/* Dark mode preparation */
+@media (prefers-color-scheme: dark) {
+  /* Add dark mode styles here if needed */
+}

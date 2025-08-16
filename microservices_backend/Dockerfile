@@ -4,9 +4,10 @@ FROM python:3.10-slim
 # Set the working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including curl for health checks
 RUN apt-get update && apt-get install -y \
     build-essential \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements.txt and install dependencies
@@ -24,4 +25,4 @@ ENV PYTHONPATH=/app
 EXPOSE 5001 5002 5003 5004
 
 # Run the application (you can specify the port to run each service based on its role)
-CMD ["python3", "mcp_server/app.py"]
+CMD ["python3", "run_all.py"]

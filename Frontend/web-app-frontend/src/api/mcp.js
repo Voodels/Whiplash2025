@@ -1,5 +1,5 @@
 // api/mcp.js
-import axios from 'axios';
+import axiosInstance from './axiosConfig';
 
 export const generateLearningPath = async (data) => {
   console.log("[generateLearningPath] Original Payload:", data); // Debug log
@@ -19,12 +19,7 @@ export const generateLearningPath = async (data) => {
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await axios.post('http://localhost:5001/generate_plan', transformedData, {
-        timeout: 300000,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      const response = await axiosInstance.post('/microservices/generate-plan', transformedData, { timeout: 300000 });
       return response.data;
     } catch (error) {
       console.error("[generateLearningPath] Error:", error); // Debug log

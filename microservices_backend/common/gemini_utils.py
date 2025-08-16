@@ -5,13 +5,14 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 # Retry logic with exponential backoff
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-def call_gemini(prompt, model="gemini-1.5-pro-latest"):
+def call_gemini(prompt, model="gemini-1.5-pro-latest", api_key=None):
     """
     Calls the Gemini API to generate content based on the provided prompt.
 
     Args:
         prompt (str): The input prompt for the Gemini API.
         model (str): The Gemini model to use (default: "gemini-1.5-pro-latest").
+        api_key (str, optional): The API key to use. If not provided, falls back to GEMINI_API_KEY environment variable.
 
     Returns:
         str: The generated content from the Gemini API.
@@ -20,7 +21,13 @@ def call_gemini(prompt, model="gemini-1.5-pro-latest"):
         Exception: If the API call fails or returns an error.
     """
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    params = {'key': os.getenv('GEMINI_API_KEY')}
+    
+    # Use provided API key or fall back to environment variable
+    api_key = api_key or os.getenv('GEMINI_API_KEY')
+    if not api_key:
+        raise ValueError("No API key provided and GEMINI_API_KEY environment variable is not set")
+        
+    params = {'key': api_key}
     headers = {'Content-Type': 'application/json'}
     payload = {
         "contents": [{

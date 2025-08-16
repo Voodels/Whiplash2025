@@ -2,11 +2,28 @@
 Material Generator Service: HTTP microservice to generate study material/notes for each topic using Gemini.
 """
 from flask import Flask, request, jsonify
-from common.gemini_utils import call_gemini
+from flask_cors import CORS
+from common.ai_utils import call_ai
 import json
 import re
+from datetime import datetime
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})  # Allow all origins for development
+
+# Health check endpoint
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Health check endpoint for the Material Generator service"""
+    return jsonify({
+        'service': 'Material Generator',
+        'status': 'running',
+        'timestamp': datetime.now().isoformat(),
+        'endpoints': {
+            'POST /generate_material': 'Generate study material',
+            'GET /health': 'Service health check'
+        }
+    }), 200
 
 STUDY_PLAN_PROMPT = (
     "You are a study planner assistant. Given a topic, number of days, start date, and daily hours, "
@@ -22,6 +39,7 @@ def generate_material():
     no_of_days = data.get('no_of_days')
     start_date = data.get('start_date')
     daily_hours = data.get('daily_hours')
+    api_key = data.get('api_key')  # Get API key from request
 
     # Validate input
     if not all([topic_name, no_of_days, start_date, daily_hours]):
@@ -32,12 +50,31 @@ def generate_material():
         + STUDY_PLAN_PROMPT
     )
     try:
-        plan_str = call_gemini(prompt)
-        # Remove Markdown code block formatting if present
-        cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', plan_str.strip(), flags=re.IGNORECASE | re.MULTILINE).strip()
-        plan = json.loads(cleaned)
+        # For testing, return a mock response instead of calling the AI
+        mock_plan = {
+            "2025-08-05": "Introduction to Python Programming",
+            "2025-08-06": "Python Data Types and Variables",
+            "2025-08-07": "Control Flow and Functions in Python"
+        }
+        
+        # Uncomment this to use the real AI call
+        # plan_str = call_ai(prompt, api_key=api_key, provider=request.json.get('provider', 'openai'))
+        # cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', plan_str.strip(), flags=re.IGNORECASE | re.MULTILINE).strip()
+        # plan = json.loads(cleaned)
+        
+        plan = mock_plan  # Using mock response for now
+        
     except Exception as e:
-        return jsonify({'error': str(e), 'gemini_response': plan_str if 'plan_str' in locals() else None}), 500
+        return jsonify({
+            'error': 'Failed to generate study material',
+            'details': str(e),
+            'request_data': {
+                'topic': topic_name,
+                'days': no_of_days,
+                'start_date': start_date,
+                'daily_hours': daily_hours
+            }
+        }), 500
 
     response = {
         "daily_hours": daily_hours,
@@ -49,34 +86,6 @@ def generate_material():
     }
     return jsonify(response)
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0',port=5002, debug=True)
-
-def main():
-    consumer = get_kafka_consumer('material_generator_group', ['material.generate.request'])
-    producer = get_kafka_producer()
-    print("[MaterialGenerator] Listening for material generation requests...")
-    while True:
-        msg = consumer.poll(1.0)
-        if msg is None:
-            continue
-        if msg.error():
-            print(f"Consumer error: {msg.error()}")
-            continue
-        data = json.loads(msg.value().decode('utf-8'))
-        subject = data['subject']
-        topics = data['topics']
-        materials = []
-        for topic in topics:
-            note = generate_study_material(topic)
-            materials.append({'topic': topic, 'notes': note})
-        response = {
-            'subject': subject,
-            'materials': materials
-        }
-        producer.produce('material.generate.response', json.dumps(response).encode('utf-8'))
-        producer.flush()
-        print(f"[MaterialGenerator] Published notes for subject: {subject}")
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    print("Starting Material Generator on port 5102...")
+    app.run(host="0.0.0.0", port=5102, debug=False)
